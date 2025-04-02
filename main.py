@@ -1,6 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, Canvas, messagebox, colorchooser, Scale
-from tkinter import simpledialog
+from tkinter import filedialog, Canvas, messagebox, colorchooser, simpledialog
 import numpy as np
 import pydicom
 from PIL import Image, ImageTk, ImageDraw
@@ -12,6 +11,21 @@ class CTImageEditor:
         self.root = root
         self.root.title("CT Scan Viewer and Editor")
 
+        self.menu_bar = tk.Menu(root)
+        root.config(menu=self.menu_bar)
+
+        self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.file_menu.add_command(label="Open Folder", command=self.open_folder)
+        self.file_menu.add_command(label="Save", command=self.save_image)
+        self.menu_bar.add_cascade(label="File", menu=self.file_menu)
+
+        self.menu_bar.add_command(label="Pencil", command=self.use_pencil)
+        self.menu_bar.add_command(label="Eraser", command=self.use_eraser)
+        self.menu_bar.add_command(label="Choose Color", command=self.choose_color)
+
+        # Добавляем команду "Line Width", при нажатии на которую появляется окно ввода толщины линии
+        self.menu_bar.add_command(label="Line Width", command=self.ask_line_width)
+
         self.canvas = Canvas(root, width=600, height=600, bg="white")
         self.canvas.pack()
 
@@ -19,36 +33,16 @@ class CTImageEditor:
         self.tk_image = None
         self.image_files = []
         self.current_index = 0
-        self.drawn_objects = []  # Список для хранения нарисованных элементов
-
-        self.btn_open = tk.Button(root, text="Open Folder", command=self.open_folder)
-        self.btn_open.pack(side=tk.LEFT, padx=5, pady=5)
-
-        self.btn_pencil = tk.Button(root, text="Pencil", command=self.use_pencil)
-        self.btn_pencil.pack(side=tk.LEFT, padx=5, pady=5)
-
-        self.btn_eraser = tk.Button(root, text="Eraser", command=self.use_eraser)
-        self.btn_eraser.pack(side=tk.LEFT, padx=5, pady=5)
-
-        self.btn_color = tk.Button(root, text="Choose Color", command=self.choose_color)
-        self.btn_color.pack(side=tk.LEFT, padx=5, pady=5)
-
-        self.btn_save = tk.Button(root, text="Save", command=self.save_image)
-        self.btn_save.pack(side=tk.LEFT, padx=5, pady=5)
-
-        self.line_width = Scale(root, from_=1, to=20, orient=tk.HORIZONTAL, label="Line Width")
-        self.line_width.set(5)
-        self.line_width.pack(side=tk.LEFT, padx=5, pady=5)
+        self.drawn_objects = []
 
         self.tool = "pencil"
         self.pencil_color = "black"
+        self.line_width = 5
 
         self.canvas.bind("<B1-Motion>", self.paint)
-
-        # Привязка событий прокрутки для всех ОС
-        self.canvas.bind("<MouseWheel>", self.scroll_images)  # Windows/macOS
-        self.canvas.bind("<Button-4>", self.scroll_images)  # Linux (скролл вверх)
-        self.canvas.bind("<Button-5>", self.scroll_images)  # Linux (скролл вниз)
+        self.canvas.bind("<MouseWheel>", self.scroll_images)
+        self.canvas.bind("<Button-4>", self.scroll_images)
+        self.canvas.bind("<Button-5>", self.scroll_images)
 
     def open_folder(self):
         folder_path = filedialog.askdirectory()
@@ -64,7 +58,7 @@ class CTImageEditor:
     def load_image(self):
         if not self.image_files:
             return
-        self.canvas.delete("all")  # Очистка холста при загрузке нового изображения
+        self.canvas.delete("all")
         self.drawn_objects.clear()
 
         file_path = self.image_files[self.current_index]
@@ -89,9 +83,9 @@ class CTImageEditor:
         if not self.image_files:
             return
 
-        if event.num == 4 or event.delta > 0:  # Прокрутка вверх
+        if event.num == 4 or event.delta > 0:
             self.current_index = (self.current_index - 1) % len(self.image_files)
-        elif event.num == 5 or event.delta < 0:  # Прокрутка вниз
+        elif event.num == 5 or event.delta < 0:
             self.current_index = (self.current_index + 1) % len(self.image_files)
 
         self.load_image()
@@ -107,18 +101,23 @@ class CTImageEditor:
         if color:
             self.pencil_color = color
 
+    def ask_line_width(self):
+        # Всплывающее окно для ввода толщины линии
+        line_width = simpledialog.askinteger("Line Width", "Enter line width (1-20):", minvalue=1, maxvalue=20, initialvalue=self.line_width)
+        if line_width:
+            self.line_width = line_width
+
     def paint(self, event):
         color = self.pencil_color if self.tool == "pencil" else "white"
-        size = self.line_width.get()
 
         if self.tool == "eraser":
-            items = self.canvas.find_overlapping(event.x - size, event.y - size, event.x + size, event.y + size)
+            items = self.canvas.find_overlapping(event.x - self.line_width, event.y - self.line_width, event.x + self.line_width, event.y + self.line_width)
             for item in items:
-                if item in self.drawn_objects:  # Удаляем только нарисованные пользователем объекты
+                if item in self.drawn_objects:
                     self.canvas.delete(item)
                     self.drawn_objects.remove(item)
         else:
-            obj = self.canvas.create_oval(event.x - size, event.y - size, event.x + size, event.y + size, fill=color,
+            obj = self.canvas.create_oval(event.x - self.line_width, event.y - self.line_width, event.x + self.line_width, event.y + self.line_width, fill=color,
                                           outline=color)
             self.drawn_objects.append(obj)
 
@@ -127,20 +126,15 @@ class CTImageEditor:
             messagebox.showerror("Error", "No image to save.")
             return
 
-        # Создаем копию исходного изображения
         final_image = self.image.copy()
-        draw = ImageDraw.Draw(final_image)  # Создаем объект для рисования на изображении
+        draw = ImageDraw.Draw(final_image)
 
-        # Переносим все нарисованные элементы с холста на изображение
         for obj in self.drawn_objects:
             coords = self.canvas.coords(obj)
             color = self.canvas.itemcget(obj, 'fill')
-            size = self.line_width.get()
 
-            # Рисуем круги, как в оригинальном изображении
             draw.ellipse([coords[0], coords[1], coords[2], coords[3]], fill=color, outline=color)
 
-        # Сохранение изображения с изменениями
         save_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Files", "*.png"), ("JPEG Files", "*.jpg;*.jpeg")])
         if save_path:
             final_image.save(save_path)
